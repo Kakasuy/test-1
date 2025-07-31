@@ -83,6 +83,7 @@ export const RentalCarSearchForm: FC<Props> = ({ className, formStyle = 'default
           className="hero-search-form__field-after flex-1"
           inputName="pickup-location"
           fieldStyle={formStyle}
+          category="car"
         />
         {isDdropOffdifferent && (
           <>
@@ -93,6 +94,7 @@ export const RentalCarSearchForm: FC<Props> = ({ className, formStyle = 'default
               className="hero-search-form__field-before hero-search-form__field-after flex-1"
               inputName="dropoff-location"
               fieldStyle={formStyle}
+              category="car"
             />
           </>
         )}

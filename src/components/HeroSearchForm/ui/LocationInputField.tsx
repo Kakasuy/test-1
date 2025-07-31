@@ -1,6 +1,7 @@
 'use client'
 
 import { useInteractOutside } from '@/hooks/useInteractOutside'
+import { useLocationSearch, LocationSuggestion } from '@/hooks/useLocationSearch'
 import { Divider } from '@/shared/divider'
 import T from '@/utils/getT'
 import * as Headless from '@headlessui/react'
@@ -12,6 +13,8 @@ import {
   LakeIcon,
   Location01Icon,
   TwinTowerIcon,
+  Plane01Icon,
+  Building02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon, IconSvgElement } from '@hugeicons/react'
 import clsx from 'clsx'
@@ -23,6 +26,8 @@ type Suggest = {
   id: string
   name: string
   icon?: IconSvgElement
+  displayName?: string
+  type?: 'AIRPORT' | 'CITY'
 }
 
 const demoInitSuggests: Suggest[] = [
@@ -103,6 +108,7 @@ interface Props {
   initSuggests?: Suggest[]
   searchingSuggests?: Suggest[]
   fieldStyle: 'default' | 'small'
+  category?: 'stays' | 'car' | 'flight' | 'experience' | 'real-estate' // New prop to determine search context
 }
 
 export const LocationInputField: FC<Props> = ({
@@ -113,11 +119,31 @@ export const LocationInputField: FC<Props> = ({
   initSuggests = demoInitSuggests,
   searchingSuggests = demoSearchingSuggests,
   fieldStyle = 'default',
+  category = 'stays', // Default to stays
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [showPopover, setShowPopover] = useState(false)
   const [selected, setSelected] = useState<Suggest | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
+  
+  // Hook for Amadeus location search
+  const { suggestions, loading, error, searchLocations, clearSuggestions } = useLocationSearch()
+  
+  // Determine location type based on category
+  const getLocationType = useCallback(() => {
+    switch (category) {
+      case 'stays':
+      case 'real-estate':
+        return 'CITY' // Only cities for accommodations and real estate
+      case 'flight':
+        return 'AIRPORT' // Only airports for flights
+      case 'car':
+      case 'experience':
+      default:
+        return 'ALL' // Both for car rentals and experiences
+    }
+  }, [category])
 
   useEffect(() => {
     const _inputFocusTimeOut = setTimeout(() => {
@@ -138,27 +164,70 @@ export const LocationInputField: FC<Props> = ({
   //  a custom hook that listens for clicks outside the container
   useInteractOutside(containerRef, closePopover)
 
-  const handleInputChange = useCallback(
-    _.debounce((e: React.ChangeEvent<HTMLInputElement>) => {
-      setShowPopover(true)
-      // If the input is empty, Combobox will automatically setSelected
-      if (e.target.value) {
+  // Function to get icon based on location type
+  const getLocationIcon = useCallback((suggestion: LocationSuggestion | Suggest): IconSvgElement => {
+    if ('icon' in suggestion && suggestion.icon) return suggestion.icon
+    if ('type' in suggestion) {
+      switch (suggestion.type) {
+        case 'AIRPORT':
+          return Plane01Icon
+        case 'CITY':
+          return Building02Icon
+        default:
+          return Location01Icon
+      }
+    }
+    return Location01Icon
+  }, [])
+
+  // Convert LocationSuggestion to Suggest format
+  const convertToSuggest = useCallback((suggestion: LocationSuggestion): Suggest => ({
+    id: suggestion.id,
+    name: suggestion.displayName || suggestion.name,
+    displayName: suggestion.displayName,
+    type: suggestion.type,
+    icon: getLocationIcon(suggestion),
+  }), [getLocationIcon])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.trim()
+    setShowPopover(true)
+    
+    if (value.length >= 2) {
+      setIsSearching(true)
+      const locationType = getLocationType()
+      searchLocations(value, locationType)
+      setSelected({
+        id: Date.now().toString(),
+        name: value,
+      })
+    } else {
+      setIsSearching(false)
+      clearSuggestions()
+      if (value) {
         setSelected({
-          id: Date.now().toString(), // Generate a unique id for the selected item
-          name: e.target.value,
+          id: Date.now().toString(),
+          name: value,
         })
       }
-    }, 300),
-    []
-  )
-  useEffect(() => {
-    return () => {
-      handleInputChange.cancel() // Hủy debounce khi component unmount
     }
-  }, [handleInputChange])
+  }, [searchLocations, clearSuggestions, getLocationType])
 
-  const isShowInitSuggests = !selected?.id
-  const suggestsToShow = isShowInitSuggests ? initSuggests : searchingSuggests
+  // Determine what suggestions to show
+  const isShowInitSuggests = !selected?.id || (!isSearching && suggestions.length === 0)
+  const apiSuggestions = suggestions.map(convertToSuggest)
+  
+  let suggestsToShow: Suggest[] = []
+  if (isShowInitSuggests) {
+    suggestsToShow = initSuggests
+  } else if (isSearching && suggestions.length > 0) {
+    suggestsToShow = apiSuggestions
+  } else if (isSearching && suggestions.length === 0 && !loading) {
+    // Show fallback suggestions when API returns no results
+    suggestsToShow = searchingSuggests
+  } else {
+    suggestsToShow = searchingSuggests
+  }
   return (
     <div
       className={`group relative z-10 flex ${className}`}
@@ -209,6 +278,8 @@ export const LocationInputField: FC<Props> = ({
               onClick={() => {
                 setSelected({ id: '', name: '' })
                 setShowPopover(false)
+                setIsSearching(false)
+                clearSuggestions()
                 inputRef.current?.focus()
               }}
             />
@@ -223,6 +294,31 @@ export const LocationInputField: FC<Props> = ({
               </p>
             )}
             {isShowInitSuggests && <Divider className="opacity-50" />}
+            
+            {/* Loading state */}
+            {loading && (
+              <div className="flex items-center justify-center py-4">
+                <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+                  <div className="animate-spin h-4 w-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full"></div>
+                  Searching locations...
+                </div>
+              </div>
+            )}
+            
+            {/* Error state */}
+            {error && !loading && (
+              <div className="px-4 py-3 text-sm text-red-600 dark:text-red-400 sm:px-8">
+                {error}
+              </div>
+            )}
+            
+            {/* No results message */}
+            {isSearching && !loading && suggestions.length === 0 && !error && (
+              <div className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400 sm:px-8">
+                No locations found. Showing popular destinations instead.
+              </div>
+            )}
+            
             <Headless.ComboboxOptions static unmount={false}>
               {suggestsToShow.map((item) => (
                 <Headless.ComboboxOption
@@ -234,7 +330,16 @@ export const LocationInputField: FC<Props> = ({
                     icon={item.icon || Location01Icon}
                     className="size-4 text-neutral-400 sm:size-6 dark:text-neutral-500"
                   />
-                  <span className="block font-medium text-neutral-700 dark:text-neutral-200">{item.name}</span>
+                  <div className="flex flex-col">
+                    <span className="block font-medium text-neutral-700 dark:text-neutral-200">
+                      {item.name}
+                    </span>
+                    {item.type && (
+                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {item.type === 'AIRPORT' ? 'Airport' : 'City'}
+                      </span>
+                    )}
+                  </div>
                 </Headless.ComboboxOption>
               ))}
             </Headless.ComboboxOptions>
