@@ -36,5 +36,5 @@ yarn-error.log*
 next-env.d.ts
 
 # other
-CLAUDE.node
+CLAUDE.md
 README.md
