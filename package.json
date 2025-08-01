@@ -1,6 +1,6 @@
 {
-  "name": "chisfis-template",
-  "description": "A template for creating a Next.js application with Tailwind CSS and TypeScript.",
+  "name": "chisfis-template-clone",
+  "description": "chisfis-template-clone",
   "version": "2.1.0",
   "private": true,
   "scripts": {
